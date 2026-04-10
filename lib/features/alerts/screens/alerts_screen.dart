@@ -191,7 +191,7 @@ class _OverflowMenu extends StatelessWidget {
               width: 56,
               height: 56,
               decoration: BoxDecoration(
-                color: OrbitalColors.danger.withOpacity(0.1),
+                color: OrbitalColors.danger.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -400,7 +400,7 @@ class _SwipeBackground extends StatelessWidget {
       alignment: Alignment.centerRight,
       padding: const EdgeInsets.only(right: 20),
       decoration: BoxDecoration(
-        color: OrbitalColors.danger.withOpacity(0.15),
+        color: OrbitalColors.danger.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(14),
       ),
       child: const Icon(
@@ -421,11 +421,13 @@ class _AlertCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final color = _metricColor(alert.metric);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final color = colorScheme.primary;
+    final isDark = theme.brightness == Brightness.dark;
     final borderColor = isDark
-        ? Colors.white.withOpacity(0.08)
-        : Colors.black.withOpacity(0.08);
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.08);
 
     return GestureDetector(
       onTap: () {
@@ -435,7 +437,7 @@ class _AlertCard extends ConsumerWidget {
       },
       child: Container(
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
+          color: colorScheme.surface,
           borderRadius: BorderRadius.circular(14),
           // Uniform border — no multi-color border which breaks with borderRadius
           border: Border.all(color: borderColor),
@@ -465,7 +467,7 @@ class _AlertCard extends ConsumerWidget {
                         width: 38,
                         height: 38,
                         decoration: BoxDecoration(
-                          color: color.withOpacity(0.12),
+                          color: color.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Icon(
@@ -492,9 +494,7 @@ class _AlertCard extends ConsumerWidget {
                                       fontWeight: alert.isRead
                                           ? FontWeight.w500
                                           : FontWeight.w700,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurface,
+                                      color: colorScheme.onSurface,
                                     ),
                                   ),
                                 ),
@@ -503,10 +503,7 @@ class _AlertCard extends ConsumerWidget {
                                   _relativeTime(alert.timestamp),
                                   style: TextStyle(
                                     fontSize: 11,
-                                    color:
-                                        Theme.of(
-                                          context,
-                                        ).textTheme.bodySmall?.color ??
+                                    color: theme.textTheme.bodySmall?.color ??
                                         OrbitalColors.textMuted,
                                   ),
                                 ),
@@ -526,9 +523,7 @@ class _AlertCard extends ConsumerWidget {
                                     style: TextStyle(
                                       fontSize: 12,
                                       color:
-                                          Theme.of(
-                                            context,
-                                          ).textTheme.bodySmall?.color ??
+                                          theme.textTheme.bodySmall?.color ??
                                           OrbitalColors.textMuted,
                                     ),
                                   ),
@@ -541,9 +536,7 @@ class _AlertCard extends ConsumerWidget {
                               style: TextStyle(
                                 fontSize: 12,
                                 color:
-                                    Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall?.color ??
+                                    theme.textTheme.bodySmall?.color ??
                                     OrbitalColors.textMuted,
                               ),
                               maxLines: 1,
@@ -577,13 +570,6 @@ class _AlertCard extends ConsumerWidget {
     );
   }
 
-  Color _metricColor(String metric) => switch (metric) {
-    'cpu' => OrbitalColors.cpu,
-    'ram' => OrbitalColors.memory,
-    'disk' => OrbitalColors.disk,
-    _ => OrbitalColors.warning,
-  };
-
   IconData _metricIcon(String metric) => switch (metric) {
     'cpu' => Icons.memory_rounded,
     'ram' => Icons.storage_rounded,
@@ -614,7 +600,7 @@ class _MetricChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
@@ -646,7 +632,9 @@ class _EmptyState extends StatelessWidget {
               width: 72,
               height: 72,
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary.withOpacity(0.08),
+                color: Theme.of(
+                  context,
+                ).colorScheme.primary.withValues(alpha: 0.08),
                 shape: BoxShape.circle,
               ),
               child: Icon(
