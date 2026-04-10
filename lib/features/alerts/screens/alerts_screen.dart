@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../models/alert_model.dart';
@@ -622,6 +623,8 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 48),
@@ -632,15 +635,13 @@ class _EmptyState extends StatelessWidget {
               width: 72,
               height: 72,
               decoration: BoxDecoration(
-                color: Theme.of(
-                  context,
-                ).colorScheme.primary.withValues(alpha: 0.08),
+                color: theme.colorScheme.primary.withValues(alpha: 0.08),
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 Icons.notifications_none_rounded,
                 size: 34,
-                color: Theme.of(context).colorScheme.primary,
+                color: theme.colorScheme.primary,
               ),
             ),
             const SizedBox(height: 20),
@@ -649,7 +650,7 @@ class _EmptyState extends StatelessWidget {
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
-                color: Theme.of(context).colorScheme.onSurface,
+                color: theme.colorScheme.onSurface,
                 letterSpacing: -0.2,
               ),
             ),
@@ -659,14 +660,86 @@ class _EmptyState extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
-                color:
-                    Theme.of(context).textTheme.bodySmall?.color ??
-                    OrbitalColors.textMuted,
+                color: theme.textTheme.bodySmall?.color ?? OrbitalColors.textMuted,
                 height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: const [
+                _EmptyStateBadge(
+                  icon: Icons.tune_rounded,
+                  label: 'Thresholds',
+                ),
+                _EmptyStateBadge(
+                  icon: Icons.cell_tower_rounded,
+                  label: 'Relay',
+                ),
+                _EmptyStateBadge(
+                  icon: Icons.dns_rounded,
+                  label: 'Per-server',
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            FilledButton.tonalIcon(
+              onPressed: () => context.push('/settings/thresholds'),
+              icon: const Icon(Icons.tune_rounded, size: 18),
+              label: const Text('Review Thresholds'),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _EmptyStateBadge extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _EmptyStateBadge({
+    required this.icon,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: theme.dividerColor.withValues(alpha: 0.6),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 16,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+        ],
       ),
     );
   }
