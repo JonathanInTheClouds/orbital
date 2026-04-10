@@ -1,0 +1,15 @@
+[Unit]
+Description=Orbital Agent — server metrics alerting
+After=network.target
+
+[Service]
+Type=simple
+User=nobody
+ExecStart=/usr/local/bin/orbital-agent -config /etc/orbital-agent/config.json
+Restart=on-failure
+RestartSec=10s
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

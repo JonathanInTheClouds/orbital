@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "147935715952",
+    "project_id": "orbital-def52",
+    "storage_bucket": "orbital-def52.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:147935715952:android:08a59b861a464745cf4ab5",
+        "android_client_info": {
+          "package_name": "com.orbital.orbital"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCZU7N3M_7tQwW1fMHexymFtY-dptDJ2Tg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:147935715952:android:6e4c225afca65800cf4ab5",
+        "android_client_info": {
+          "package_name": "io.jonathanintheclouds.orbital"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCZU7N3M_7tQwW1fMHexymFtY-dptDJ2Tg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,93 @@
+name: Release Agent
+
+on:
+  push:
+    tags:
+      - "agent/v*"
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build:
+    name: Build and release orbital-agent
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#agent/}" >> $GITHUB_OUTPUT
+
+      - name: Build linux/amd64
+        working-directory: agent
+        run: |
+          GOOS=linux GOARCH=amd64 go build -o orbital-agent-linux-amd64 .
+
+      - name: Build linux/arm64
+        working-directory: agent
+        run: |
+          GOOS=linux GOARCH=arm64 go build -o orbital-agent-linux-arm64 .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Orbital Agent ${{ steps.version.outputs.VERSION }}
+          tag_name: ${{ github.ref_name }}
+          body: |
+            ## Orbital Agent ${{ steps.version.outputs.VERSION }}
+
+            ### Installation
+            Install automatically via the Orbital app, or manually:
+
+            **Docker / Podman:**
+            ```bash
+            docker run -d \
+              --pid=host \
+              --restart=always \
+              --name orbital-agent \
+              -e SERVER_ID=my-server \
+              -e RELAY_URL=http://your-relay:8080/alert \
+              -e AUTH_TOKEN=your-token \
+              ghcr.io/jonathanintheclouds/orbital-agent:latest
+            ```
+
+            **Binary:**
+
+            | File | Architecture |
+            |------|-------------|
+            | `orbital-agent-linux-amd64` | Most VPS (Intel/AMD 64-bit) |
+            | `orbital-agent-linux-arm64` | Raspberry Pi, ARM servers |
+          files: |
+            agent/orbital-agent-linux-amd64
+            agent/orbital-agent-linux-arm64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push container image
+        uses: docker/build-push-action@v5
+        with:
+          context: agent
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/jonathanintheclouds/orbital-agent:latest
+            ghcr.io/jonathanintheclouds/orbital-agent:${{ steps.version.outputs.VERSION }}

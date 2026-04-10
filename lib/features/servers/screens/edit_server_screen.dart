@@ -1,0 +1,890 @@
+import 'dart:async';
+
+import 'package:dartssh2/dartssh2.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../../core/models/alert_thresholds.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../../data/database/app_database.dart';
+import '../../../data/database/tables.dart';
+import '../../../data/models/server_model.dart';
+import '../../../data/repositories/server_repository.dart';
+import '../../../data/settings/settings_repository.dart';
+import '../services/agent_threshold_sync_service.dart';
+import '../../../ssh/ssh_connection_manager.dart';
+
+// ── Test result (shared with AddServerScreen) ─────────────────────────────────
+
+enum _TestStatus { idle, testing, success, failure }
+
+class _TestResult {
+  final _TestStatus status;
+  final String? message;
+  const _TestResult(this.status, [this.message]);
+  static const idle = _TestResult(_TestStatus.idle);
+  static const testing = _TestResult(_TestStatus.testing);
+}
+
+// ── EditServerScreen ──────────────────────────────────────────────────────────
+
+class EditServerScreen extends ConsumerStatefulWidget {
+  final Server server;
+
+  const EditServerScreen({super.key, required this.server});
+
+  @override
+  ConsumerState<EditServerScreen> createState() => _EditServerScreenState();
+}
+
+class _EditServerScreenState extends ConsumerState<EditServerScreen> {
+  final _formKey = GlobalKey<FormState>();
+
+  late final TextEditingController _nameController;
+  late final TextEditingController _hostController;
+  late final TextEditingController _portController;
+  late final TextEditingController _usernameController;
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _privateKeyController = TextEditingController();
+
+  late AuthType _authType;
+  late Color _selectedColor;
+  bool _obscurePassword = true;
+  bool _isSaving = false;
+  _TestResult _testResult = _TestResult.idle;
+  late bool _useAppDefaults;
+  late AlertThresholdPreset _thresholdPreset;
+  late double _cpuThreshold;
+  late double _memoryThreshold;
+  late double _diskThreshold;
+
+  // The credential loaded from secure storage at init time.
+  String _existingCredential = '';
+
+  final List<Color> _serverColors = const [
+    OrbitalColors.accent,
+    OrbitalColors.memory,
+    OrbitalColors.network,
+    OrbitalColors.warning,
+    OrbitalColors.danger,
+    Color(0xFF06B6D4),
+    Color(0xFFEC4899),
+    Color(0xFF84CC16),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    final s = widget.server;
+    _nameController = TextEditingController(text: s.name);
+    _hostController = TextEditingController(text: s.host);
+    _portController = TextEditingController(text: s.port.toString());
+    _usernameController = TextEditingController(text: s.username);
+    _authType = s.authTypeEnum;
+    _selectedColor = s.displayColor ?? OrbitalColors.accent;
+    _useAppDefaults =
+        s.cpuAlertThreshold == null &&
+        s.memoryAlertThreshold == null &&
+        s.diskAlertThreshold == null;
+    _cpuThreshold = s.cpuAlertThreshold ?? AlertThresholdProfile.balanced.cpu;
+    _memoryThreshold =
+        s.memoryAlertThreshold ?? AlertThresholdProfile.balanced.memory;
+    _diskThreshold =
+        s.diskAlertThreshold ?? AlertThresholdProfile.balanced.disk;
+    _thresholdPreset = detectPreset(
+      AlertThresholdProfile(
+        cpu: _cpuThreshold,
+        memory: _memoryThreshold,
+        disk: _diskThreshold,
+      ),
+    );
+    _loadExistingCredential();
+  }
+
+  Future<void> _loadExistingCredential() async {
+    final repo = ref.read(serverRepositoryProvider);
+    final cred = await repo.getCredential(widget.server.credentialStorageKey);
+    if (mounted) {
+      setState(() => _existingCredential = cred ?? '');
+    }
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _hostController.dispose();
+    _portController.dispose();
+    _usernameController.dispose();
+    _passwordController.dispose();
+    _privateKeyController.dispose();
+    super.dispose();
+  }
+
+  // ── Credential to use ─────────────────────────────────────────────────────
+  // If the user typed a new value use that; otherwise keep the existing one.
+
+  String get _activeCredential {
+    final typed = _authType == AuthType.password
+        ? _passwordController.text
+        : _privateKeyController.text;
+    return typed.isNotEmpty ? typed : _existingCredential;
+  }
+
+  // ── Test connection ───────────────────────────────────────────────────────
+
+  Future<void> _testConnection() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _testResult = _TestResult.testing);
+
+    final host = _hostController.text.trim();
+    final port = int.tryParse(_portController.text) ?? 22;
+    final username = _usernameController.text.trim();
+    final credential = _activeCredential;
+
+    SSHClient? client;
+    final sw = Stopwatch()..start();
+
+    try {
+      final socket = await SSHSocket.connect(
+        host,
+        port,
+        timeout: const Duration(seconds: 10),
+      );
+      client = SSHClient(
+        socket,
+        username: username,
+        onPasswordRequest: _authType == AuthType.password
+            ? () => credential
+            : null,
+        identities: _authType == AuthType.privateKey
+            ? [...SSHKeyPair.fromPem(credential)]
+            : null,
+      );
+      await client.authenticated;
+      sw.stop();
+      final session = await client.execute('echo ok');
+      await session.done;
+      if (!mounted) return;
+      setState(
+        () => _testResult = _TestResult(
+          _TestStatus.success,
+          '${sw.elapsedMilliseconds} ms',
+        ),
+      );
+    } on SSHAuthError catch (e) {
+      if (!mounted) return;
+      setState(
+        () => _testResult = _TestResult(
+          _TestStatus.failure,
+          'Auth failed: ${e.message}',
+        ),
+      );
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(
+        () => _testResult = const _TestResult(
+          _TestStatus.failure,
+          'Connection timed out',
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e.toString().replaceFirst('SocketException: ', '');
+      setState(() => _testResult = _TestResult(_TestStatus.failure, msg));
+    } finally {
+      client?.close();
+    }
+  }
+
+  // ── Save ──────────────────────────────────────────────────────────────────
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isSaving = true);
+
+    try {
+      final repo = ref.read(serverRepositoryProvider);
+      final host = _hostController.text.trim();
+      final username = _usernameController.text.trim();
+
+      // Disconnect first — host/port/auth may have changed.
+      await ref.read(sshManagerProvider).disconnect(widget.server.id);
+
+      // Keep the same credential storage key so we don't orphan the old entry.
+      final credentialKey = widget.server.credentialStorageKey;
+
+      // Only write to secure storage if the credential actually changed.
+      final newCredential = _authType == AuthType.password
+          ? _passwordController.text
+          : _privateKeyController.text;
+      final credentialToSave = newCredential.isNotEmpty ? newCredential : null;
+
+      await repo.updateServer(
+        widget.server.id,
+        ServerFormData(
+          name: _nameController.text.trim(),
+          host: host,
+          port: int.parse(_portController.text),
+          username: username,
+          authType: _authType,
+          credentialStorageKey: credentialKey,
+          color: _selectedColor,
+          cpuAlertThreshold: _useAppDefaults ? null : _cpuThreshold,
+          memoryAlertThreshold: _useAppDefaults ? null : _memoryThreshold,
+          diskAlertThreshold: _useAppDefaults ? null : _diskThreshold,
+        ),
+        credential: credentialToSave,
+      );
+
+      final updatedServer = await repo.getServerById(widget.server.id);
+      if (updatedServer != null) {
+        final appSettings = ref.read(settingsProvider);
+        await ref
+            .read(agentThresholdSyncServiceProvider)
+            .syncServer(
+              updatedServer,
+              AlertThresholdProfile(
+                cpu: appSettings.cpuAlertThreshold,
+                memory: appSettings.memoryAlertThreshold,
+                disk: appSettings.diskAlertThreshold,
+              ),
+            );
+      }
+
+      // Invalidate the cached server so the detail screen re-reads the
+      // updated record and reconnects with the new details.
+      ref.invalidate(serverByIdProvider(widget.server.id));
+
+      if (!mounted) return;
+      context.pop();
+    } catch (e) {
+      setState(() => _isSaving = false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
+    }
+  }
+
+  // ── Build ─────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      appBar: AppBar(
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        surfaceTintColor: Colors.transparent,
+        title: Text(
+          'Edit Server',
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+        ),
+        leading: IconButton(
+          icon: Icon(
+            Icons.close_rounded,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+          onPressed: () => context.pop(),
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: TextButton(
+              onPressed: _isSaving ? null : _save,
+              child: _isSaving
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    )
+                  : Text(
+                      'Save',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                    ),
+            ),
+          ),
+        ],
+      ),
+      body: Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            _buildSection(
+              title: 'Identity',
+              children: [
+                _buildColorPicker(),
+                const SizedBox(height: 16),
+                _buildTextField(
+                  controller: _nameController,
+                  label: 'Display Name',
+                  hint: 'e.g. Production Web Server',
+                  icon: Icons.label_outline_rounded,
+                  validator: (v) =>
+                      v == null || v.isEmpty ? 'Name is required' : null,
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _buildSection(
+              title: 'Connection',
+              children: [
+                _buildTextField(
+                  controller: _hostController,
+                  label: 'Host',
+                  hint: 'e.g. 192.168.1.1 or server.example.com',
+                  icon: Icons.dns_outlined,
+                  keyboardType: TextInputType.url,
+                  onChanged: (_) =>
+                      setState(() => _testResult = _TestResult.idle),
+                  validator: (v) =>
+                      v == null || v.isEmpty ? 'Host is required' : null,
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: _buildTextField(
+                        controller: _usernameController,
+                        label: 'Username',
+                        hint: 'e.g. root',
+                        icon: Icons.person_outline_rounded,
+                        onChanged: (_) =>
+                            setState(() => _testResult = _TestResult.idle),
+                        validator: (v) =>
+                            v == null || v.isEmpty ? 'Required' : null,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildTextField(
+                        controller: _portController,
+                        label: 'Port',
+                        hint: '22',
+                        icon: Icons.settings_ethernet_rounded,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        onChanged: (_) =>
+                            setState(() => _testResult = _TestResult.idle),
+                        validator: (v) {
+                          if (v == null || v.isEmpty) return 'Required';
+                          final port = int.tryParse(v);
+                          if (port == null || port < 1 || port > 65535) {
+                            return 'Invalid';
+                          }
+                          return null;
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _buildSection(
+              title: 'Authentication',
+              children: [
+                _buildAuthTypeToggle(),
+                const SizedBox(height: 16),
+                if (_authType == AuthType.password) _buildPasswordField(),
+                if (_authType == AuthType.privateKey) _buildPrivateKeyField(),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _buildSection(
+              title: 'Alert Thresholds',
+              children: [
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Use app defaults'),
+                  subtitle: const Text('Enabled = follow global thresholds'),
+                  value: _useAppDefaults,
+                  onChanged: (v) => setState(() => _useAppDefaults = v),
+                  activeThumbColor: Theme.of(context).colorScheme.primary,
+                  activeTrackColor: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                ),
+                if (!_useAppDefaults) ...[
+                  const SizedBox(height: 8),
+                  _buildThresholdPresetChips(),
+                  if (_thresholdPreset == AlertThresholdPreset.custom) ...[
+                    const SizedBox(height: 8),
+                    _buildThresholdSlider(
+                      label: 'CPU',
+                      value: _cpuThreshold,
+                      color: OrbitalColors.cpu,
+                      onChanged: (v) => setState(() => _cpuThreshold = v),
+                    ),
+                    _buildThresholdSlider(
+                      label: 'RAM',
+                      value: _memoryThreshold,
+                      color: OrbitalColors.memory,
+                      onChanged: (v) => setState(() => _memoryThreshold = v),
+                    ),
+                    _buildThresholdSlider(
+                      label: 'Disk',
+                      value: _diskThreshold,
+                      color: OrbitalColors.disk,
+                      onChanged: (v) => setState(() => _diskThreshold = v),
+                    ),
+                  ],
+                ],
+              ],
+            ),
+            const SizedBox(height: 24),
+            _buildTestConnectionButton(),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeInOut,
+              child: _testResult.status != _TestStatus.idle
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: _TestResultCard(result: _testResult),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+            const SizedBox(height: 40),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Widgets ───────────────────────────────────────────────────────────────
+
+  Widget _buildTestConnectionButton() {
+    final isTesting = _testResult.status == _TestStatus.testing;
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: isTesting ? null : _testConnection,
+        icon: isTesting
+            ? SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              )
+            : const Icon(Icons.wifi_rounded, size: 18),
+        label: Text(isTesting ? 'Testing…' : 'Test Connection'),
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          foregroundColor: Theme.of(context).colorScheme.primary,
+          side: BorderSide(color: Theme.of(context).colorScheme.primary, width: 1),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSection({
+    required String title,
+    required List<Widget> children,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 12),
+          child: Text(
+            title.toUpperCase(),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              letterSpacing: 1.2,
+            ),
+          ),
+        ),
+        Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? Colors.white.withOpacity(0.08)
+                  : Colors.black.withOpacity(0.08),
+            ),
+            boxShadow: Theme.of(context).brightness == Brightness.dark
+                ? null
+                : [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 12,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: children,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildColorPicker() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Server Color',
+          style: TextStyle(
+            fontSize: 13,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: _serverColors.map((color) {
+            final isSelected = color.toARGB32() == _selectedColor.toARGB32();
+            return GestureDetector(
+              onTap: () => setState(() => _selectedColor = color),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: 30,
+                height: 30,
+                margin: const EdgeInsets.only(right: 10),
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                  border: isSelected
+                      ? Border.all(color: Colors.white, width: 2.5)
+                      : null,
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                            color: color.withValues(alpha: 0.5),
+                            blurRadius: 8,
+                          ),
+                        ]
+                      : null,
+                ),
+                child: isSelected
+                    ? const Icon(
+                        Icons.check_rounded,
+                        color: Colors.white,
+                        size: 16,
+                      )
+                    : null,
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    required IconData icon,
+    TextInputType? keyboardType,
+    List<TextInputFormatter>? inputFormatters,
+    String? Function(String?)? validator,
+    ValueChanged<String>? onChanged,
+    bool obscureText = false,
+    Widget? suffixIcon,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
+      obscureText: obscureText,
+      onChanged: onChanged,
+      style: TextStyle(
+        color: Theme.of(context).colorScheme.onSurface,
+        fontSize: 15,
+      ),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        prefixIcon: Icon(
+          icon,
+          size: 18,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        suffixIcon: suffixIcon,
+      ),
+      validator: validator,
+    );
+  }
+
+  Widget _buildAuthTypeToggle() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).inputDecorationTheme.fillColor,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          _buildAuthTab(
+            'Password',
+            AuthType.password,
+            Icons.lock_outline_rounded,
+          ),
+          _buildAuthTab('SSH Key', AuthType.privateKey, Icons.vpn_key_outlined),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAuthTab(String label, AuthType type, IconData icon) {
+    final isSelected = _authType == type;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() {
+          _authType = type;
+          _testResult = _TestResult.idle;
+        }),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? Theme.of(context).colorScheme.primary : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: isSelected
+                    ? Colors.white
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: isSelected
+                      ? Colors.white
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPasswordField() {
+    return _buildTextField(
+      controller: _passwordController,
+      label: 'Password',
+      // Placeholder communicates that leaving blank keeps the existing value.
+      hint: _existingCredential.isNotEmpty
+          ? 'Leave blank to keep existing'
+          : 'SSH password',
+      icon: Icons.password_rounded,
+      obscureText: _obscurePassword,
+      onChanged: (_) => setState(() => _testResult = _TestResult.idle),
+      suffixIcon: IconButton(
+        icon: Icon(
+          _obscurePassword
+              ? Icons.visibility_rounded
+              : Icons.visibility_off_rounded,
+          size: 18,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+      ),
+      // Optional on edit — blank means keep existing.
+      validator: (v) {
+        if (_existingCredential.isNotEmpty) return null;
+        return v == null || v.isEmpty ? 'Password is required' : null;
+      },
+    );
+  }
+
+  Widget _buildPrivateKeyField() {
+    return _buildTextField(
+      controller: _privateKeyController,
+      label: 'Private Key (PEM)',
+      hint: _existingCredential.isNotEmpty
+          ? 'Leave blank to keep existing'
+          : '-----BEGIN OPENSSH PRIVATE KEY-----',
+      icon: Icons.key_rounded,
+      onChanged: (_) => setState(() => _testResult = _TestResult.idle),
+      validator: (v) {
+        if (_existingCredential.isNotEmpty) return null;
+        return v == null || v.isEmpty ? 'Private key is required' : null;
+      },
+    );
+  }
+
+  Widget _buildThresholdPresetChips() {
+    Widget chip(String label, AlertThresholdPreset preset, String details) {
+      final selected = _thresholdPreset == preset;
+      return ChoiceChip(
+        label: Text('$label • $details'),
+        selected: selected,
+        onSelected: (_) {
+          setState(() {
+            _thresholdPreset = preset;
+            if (preset == AlertThresholdPreset.relaxed) {
+              _cpuThreshold = AlertThresholdProfile.relaxed.cpu;
+              _memoryThreshold = AlertThresholdProfile.relaxed.memory;
+              _diskThreshold = AlertThresholdProfile.relaxed.disk;
+            } else if (preset == AlertThresholdPreset.balanced) {
+              _cpuThreshold = AlertThresholdProfile.balanced.cpu;
+              _memoryThreshold = AlertThresholdProfile.balanced.memory;
+              _diskThreshold = AlertThresholdProfile.balanced.disk;
+            } else if (preset == AlertThresholdPreset.strict) {
+              _cpuThreshold = AlertThresholdProfile.strict.cpu;
+              _memoryThreshold = AlertThresholdProfile.strict.memory;
+              _diskThreshold = AlertThresholdProfile.strict.disk;
+            }
+          });
+        },
+      );
+    }
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        chip('Relaxed', AlertThresholdPreset.relaxed, '95/95/92'),
+        chip('Balanced', AlertThresholdPreset.balanced, '90/90/85'),
+        chip('Strict', AlertThresholdPreset.strict, '75/80/75'),
+        chip('Custom', AlertThresholdPreset.custom, 'Manual'),
+      ],
+    );
+  }
+
+  Widget _buildThresholdSlider({
+    required String label,
+    required double value,
+    required Color color,
+    required ValueChanged<double> onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 8),
+        Text(
+          '$label (${value.toStringAsFixed(0)}%)',
+          style: TextStyle(color: color, fontWeight: FontWeight.w600),
+        ),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            activeTrackColor: color,
+            thumbColor: color,
+            overlayColor: color.withValues(alpha: 0.15),
+          ),
+          child: Slider(
+            value: value,
+            min: 50,
+            max: 100,
+            divisions: 10,
+            onChanged: (next) {
+              _thresholdPreset = AlertThresholdPreset.custom;
+              onChanged(next);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── _TestResultCard ───────────────────────────────────────────────────────────
+
+class _TestResultCard extends StatelessWidget {
+  final _TestResult result;
+
+  const _TestResultCard({required this.result});
+
+  @override
+  Widget build(BuildContext context) {
+    final isSuccess = result.status == _TestStatus.success;
+    final isTesting = result.status == _TestStatus.testing;
+
+    final color = isTesting
+        ? Theme.of(context).colorScheme.primary
+        : isSuccess
+        ? OrbitalColors.online
+        : OrbitalColors.danger;
+
+    final icon = isTesting
+        ? Icons.wifi_rounded
+        : isSuccess
+        ? Icons.check_circle_rounded
+        : Icons.error_rounded;
+
+    final title = isTesting
+        ? 'Connecting…'
+        : isSuccess
+        ? 'Connection successful'
+        : 'Connection failed';
+
+    final subtitle = isTesting
+        ? 'Attempting SSH handshake'
+        : isSuccess
+        ? 'Round-trip: ${result.message}'
+        : result.message ?? 'Unknown error';
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontFamily: 'Menlo',
+                  ),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

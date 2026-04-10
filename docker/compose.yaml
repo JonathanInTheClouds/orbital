@@ -1,0 +1,115 @@
+name: orbital-dev
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Orbital Docker Compose
+#
+# Two deployment models are supported:
+#
+# ┌─ SELF-HOSTED (all-in-one) ─────────────────────────────────────────────────
+# │  Run the relay alongside your agent on the same machine.
+# │  The agent points at the local relay; no external relay needed.
+# │
+# │  docker compose --profile self-hosted up
+# │
+# │  Required env vars (copy .env.example → .env and fill in):
+# │    AUTH_TOKEN, SERVER_ID
+# │    FCM_PROJECT_ID, FCM_SERVICE_ACCOUNT_B64 (or FCM_SERVICE_ACCOUNT_FILE)
+# │
+# └────────────────────────────────────────────────────────────────────────────
+#
+# ┌─ CENTRALIZED (relay-only) ─────────────────────────────────────────────────
+# │  Run just the relay on a VPS/cloud host. Multiple agents on different
+# │  machines each point at this one relay using their own unique token.
+# │  Each token is automatically its own isolated namespace.
+# │
+# │  docker compose --profile centralized up
+# │
+# │  Required env vars:
+# │    MULTI_TENANT=true
+# │    FCM_PROJECT_ID, FCM_SERVICE_ACCOUNT_B64 (or FCM_SERVICE_ACCOUNT_FILE)
+# │    (AUTH_TOKEN is not used in multi-tenant mode)
+# │
+# └────────────────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+
+services:
+
+  # ── Relay ───────────────────────────────────────────────────────────────────
+  # Included in both profiles. In self-hosted mode it is the local relay for
+  # the co-located agent. In centralized mode it is the public-facing relay
+  # that all remote agents point to.
+  relay:
+    build:
+      context: ../relay
+      dockerfile: Dockerfile
+    container_name: orbital-relay
+    profiles: [self-hosted, centralized]
+    ports:
+      - "${RELAY_PORT:-8080}:8080"
+    environment:
+      # Single-tenant (self-hosted): set AUTH_TOKEN to a shared secret.
+      # Multi-tenant (centralized):  set MULTI_TENANT=true; AUTH_TOKEN is unused.
+      AUTH_TOKEN: "${AUTH_TOKEN:-dev-token}"
+      MULTI_TENANT: "${MULTI_TENANT:-false}"
+      LISTEN_ADDR: ":8080"
+      STORE_FILE: "/data/devices.json"
+      # FCM — required unless FCM_STUB=true
+      FCM_STUB: "${FCM_STUB:-true}"
+      FCM_PROJECT_ID: "${FCM_PROJECT_ID:-}"
+      # Two ways to supply the FCM service account:
+      #   FCM_SERVICE_ACCOUNT_B64  — base64-encoded JSON string (no file mount needed)
+      #   FCM_SERVICE_ACCOUNT_FILE — path inside the container (pair with a volume)
+      FCM_SERVICE_ACCOUNT_B64: "${FCM_SERVICE_ACCOUNT_B64:-}"
+      FCM_SERVICE_ACCOUNT_FILE: "${FCM_SERVICE_ACCOUNT_FILE:-}"
+    volumes:
+      - relay-data:/data
+      # Optional: mount a host secrets dir instead of using env vars.
+      # - ${SECRETS_DIR:-/dev/null}:/run/secrets:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Agent ───────────────────────────────────────────────────────────────────
+  # Only present in the self-hosted profile. Monitors the host machine and
+  # sends alerts to the co-located relay service.
+  agent:
+    build:
+      context: ../agent
+      dockerfile: Dockerfile
+    container_name: orbital-agent
+    profiles: [self-hosted]
+    network_mode: host   # lets the agent read real host CPU/RAM/disk metrics
+    environment:
+      SERVER_ID: "${SERVER_ID:-my-server}"
+      SERVER_NAME: "${SERVER_NAME:-}"
+      RELAY_URL: "http://localhost:${RELAY_PORT:-8080}"
+      AUTH_TOKEN: "${AUTH_TOKEN:-dev-token}"
+      POLL_INTERVAL_SECONDS: "${POLL_INTERVAL_SECONDS:-30}"
+      COOLDOWN_MINUTES: "${COOLDOWN_MINUTES:-5}"
+      CPU_THRESHOLD: "${CPU_THRESHOLD:-90}"
+      RAM_THRESHOLD: "${RAM_THRESHOLD:-90}"
+      DISK_THRESHOLD: "${DISK_THRESHOLD:-85}"
+    depends_on:
+      relay:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── SSH test server ─────────────────────────────────────────────────────────
+  # Throwaway SSH target for local development.
+  # Connect in Orbital with: host=localhost  port=2222  user=orbital  pass=orbital
+  ssh-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: orbital-ssh-test
+    ports:
+      - "2222:22"
+    restart: unless-stopped
+    hostname: orbital-test-server
+
+volumes:
+  relay-data:
+    # Named volume — persists devices.json across relay container restarts.

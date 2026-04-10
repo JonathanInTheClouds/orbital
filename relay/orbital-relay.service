@@ -1,0 +1,15 @@
+[Unit]
+Description=Orbital Relay — push notification relay
+After=network.target
+
+[Service]
+Type=simple
+User=nobody
+ExecStart=/usr/local/bin/orbital-relay -config /etc/orbital-relay/config.json
+Restart=on-failure
+RestartSec=10s
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
