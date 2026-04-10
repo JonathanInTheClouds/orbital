@@ -16,11 +16,7 @@ class ServerIconCatalog {
   static const defaultKey = 'server';
 
   static const options = <ServerIconOption>[
-    ServerIconOption(
-      key: 'server',
-      label: 'Server',
-      icon: Icons.dns_rounded,
-    ),
+    ServerIconOption(key: 'server', label: 'Server', icon: Icons.dns_rounded),
     ServerIconOption(
       key: 'terminal',
       label: 'Terminal',
@@ -31,11 +27,7 @@ class ServerIconCatalog {
       label: 'Database',
       icon: Icons.storage_rounded,
     ),
-    ServerIconOption(
-      key: 'cloud',
-      label: 'Cloud',
-      icon: Icons.cloud_rounded,
-    ),
+    ServerIconOption(key: 'cloud', label: 'Cloud', icon: Icons.cloud_rounded),
     ServerIconOption(
       key: 'shield',
       label: 'Secure',
@@ -45,6 +37,16 @@ class ServerIconCatalog {
       key: 'monitor',
       label: 'Monitor',
       icon: Icons.monitor_rounded,
+    ),
+    ServerIconOption(
+      key: 'media',
+      label: 'Media',
+      icon: Icons.perm_media_rounded,
+    ),
+    ServerIconOption(
+      key: 'small-server',
+      label: 'Small Server',
+      icon: Icons.developer_board_rounded,
     ),
   ];
 

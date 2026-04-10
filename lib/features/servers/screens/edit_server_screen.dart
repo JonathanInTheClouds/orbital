@@ -53,6 +53,7 @@ class _EditServerScreenState extends ConsumerState<EditServerScreen> {
   late AuthType _authType;
   late Color _selectedColor;
   late String _selectedIconKey;
+  bool _isIconPickerExpanded = false;
   bool _obscurePassword = true;
   bool _isSaving = false;
   _TestResult _testResult = _TestResult.idle;
@@ -330,8 +331,6 @@ class _EditServerScreenState extends ConsumerState<EditServerScreen> {
                 const SizedBox(height: 16),
                 _buildColorPicker(),
                 const SizedBox(height: 16),
-                _buildIconPicker(),
-                const SizedBox(height: 16),
                 _buildTextField(
                   controller: _nameController,
                   label: 'Display Name',
@@ -421,7 +420,9 @@ class _EditServerScreenState extends ConsumerState<EditServerScreen> {
                   value: _useAppDefaults,
                   onChanged: (v) => setState(() => _useAppDefaults = v),
                   activeThumbColor: Theme.of(context).colorScheme.primary,
-                  activeTrackColor: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                  activeTrackColor: Theme.of(
+                    context,
+                  ).colorScheme.primary.withOpacity(0.3),
                 ),
                 if (!_useAppDefaults) ...[
                   const SizedBox(height: 8),
@@ -491,7 +492,10 @@ class _EditServerScreenState extends ConsumerState<EditServerScreen> {
         style: OutlinedButton.styleFrom(
           padding: const EdgeInsets.symmetric(vertical: 14),
           foregroundColor: Theme.of(context).colorScheme.primary,
-          side: BorderSide(color: Theme.of(context).colorScheme.primary, width: 1),
+          side: BorderSide(
+            color: Theme.of(context).colorScheme.primary,
+            width: 1,
+          ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
@@ -553,7 +557,7 @@ class _EditServerScreenState extends ConsumerState<EditServerScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Server Color',
+          'Icon Color',
           style: TextStyle(
             fontSize: 13,
             color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -602,111 +606,139 @@ class _EditServerScreenState extends ConsumerState<EditServerScreen> {
 
   Widget _buildIdentityPreview() {
     final color = _selectedColor;
-    final icon = ServerIconCatalog.resolveIcon(_selectedIconKey);
+    final selectedOption = ServerIconCatalog.options.firstWhere(
+      (option) => option.key == _selectedIconKey,
+      orElse: () => ServerIconCatalog.options.first,
+    );
+    final icon = selectedOption.icon;
     final label = _nameController.text.trim().isEmpty
         ? 'Server Preview'
         : _nameController.text.trim();
+    final borderColor = Theme.of(context).brightness == Brightness.dark
+        ? Colors.white.withOpacity(0.08)
+        : Colors.black.withOpacity(0.08);
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? Colors.white.withOpacity(0.08)
-              : Colors.black.withOpacity(0.08),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: color.withOpacity(0.25)),
-            ),
-            child: Icon(icon, color: color, size: 22),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildIconPicker() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Server Icon',
+          'Icon Selection',
           style: TextStyle(
             fontSize: 13,
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
         const SizedBox(height: 10),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: ServerIconCatalog.options.map((option) {
-            final isSelected = option.key == _selectedIconKey;
-            final color = _selectedColor;
-
-            return GestureDetector(
-              onTap: () => setState(() => _selectedIconKey = option.key),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? color.withOpacity(0.14)
-                      : Theme.of(context).inputDecorationTheme.fillColor,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: isSelected
-                        ? color.withOpacity(0.4)
-                        : Theme.of(context).brightness == Brightness.dark
-                            ? Colors.white.withOpacity(0.08)
-                            : Colors.black.withOpacity(0.08),
+        GestureDetector(
+          onTap: () =>
+              setState(() => _isIconPickerExpanded = !_isIconPickerExpanded),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: borderColor),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: color.withOpacity(0.25)),
+                  ),
+                  child: Icon(icon, color: color, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
                   ),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      option.icon,
-                      size: 18,
-                      color: isSelected
-                          ? color
-                          : Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      option.label,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
-                    ),
-                  ],
+                Icon(
+                  _isIconPickerExpanded
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
-              ),
-            );
-          }).toList(),
+              ],
+            ),
+          ),
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeInOut,
+          child: _isIconPickerExpanded
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: ServerIconCatalog.options.map((option) {
+                      final isSelected = option.key == _selectedIconKey;
+
+                      return GestureDetector(
+                        onTap: () =>
+                            setState(() => _selectedIconKey = option.key),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? color.withOpacity(0.14)
+                                : Theme.of(
+                                    context,
+                                  ).inputDecorationTheme.fillColor,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isSelected
+                                  ? color.withOpacity(0.4)
+                                  : borderColor,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                option.icon,
+                                size: 18,
+                                color: isSelected
+                                    ? color
+                                    : Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                option.label,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w600
+                                      : FontWeight.w500,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                )
+              : const SizedBox.shrink(),
         ),
       ],
     );
@@ -779,7 +811,9 @@ class _EditServerScreenState extends ConsumerState<EditServerScreen> {
           duration: const Duration(milliseconds: 150),
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            color: isSelected ? Theme.of(context).colorScheme.primary : Colors.transparent,
+            color: isSelected
+                ? Theme.of(context).colorScheme.primary
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(

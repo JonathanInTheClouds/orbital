@@ -504,7 +504,8 @@ class _AlertCard extends ConsumerWidget {
                                   _relativeTime(alert.timestamp),
                                   style: TextStyle(
                                     fontSize: 11,
-                                    color: theme.textTheme.bodySmall?.color ??
+                                    color:
+                                        theme.textTheme.bodySmall?.color ??
                                         OrbitalColors.textMuted,
                                   ),
                                 ),
@@ -625,77 +626,89 @@ class _EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 48),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primary.withValues(alpha: 0.08),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.notifications_none_rounded,
-                size: 34,
-                color: theme.colorScheme.primary,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Center(
+          child: Transform.translate(
+            offset: Offset(0, -constraints.maxHeight * 0.1),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 48),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.08),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.notifications_none_rounded,
+                      size: 34,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'No alerts yet',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: theme.colorScheme.onSurface,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Alerts appear here when a server\nexceeds a configured threshold.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color:
+                          theme.textTheme.bodySmall?.color ??
+                          OrbitalColors.textMuted,
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: const [
+                      _EmptyStateBadge(
+                        icon: Icons.tune_rounded,
+                        label: 'Thresholds',
+                      ),
+                      _EmptyStateBadge(
+                        icon: Icons.cell_tower_rounded,
+                        label: 'Relay',
+                      ),
+                      _EmptyStateBadge(
+                        icon: Icons.dns_rounded,
+                        label: 'Per-server',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  FilledButton.tonalIcon(
+                    onPressed: () => context.push('/settings/thresholds'),
+                    icon: const Icon(Icons.tune_rounded, size: 18),
+                    label: const Text('Review Thresholds'),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 14,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 20),
-            Text(
-              'No alerts yet',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: theme.colorScheme.onSurface,
-                letterSpacing: -0.2,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Alerts appear here when a server\nexceeds a configured threshold.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                color: theme.textTheme.bodySmall?.color ?? OrbitalColors.textMuted,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 20),
-            Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 8,
-              runSpacing: 8,
-              children: const [
-                _EmptyStateBadge(
-                  icon: Icons.tune_rounded,
-                  label: 'Thresholds',
-                ),
-                _EmptyStateBadge(
-                  icon: Icons.cell_tower_rounded,
-                  label: 'Relay',
-                ),
-                _EmptyStateBadge(
-                  icon: Icons.dns_rounded,
-                  label: 'Per-server',
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            FilledButton.tonalIcon(
-              onPressed: () => context.push('/settings/thresholds'),
-              icon: const Icon(Icons.tune_rounded, size: 18),
-              label: const Text('Review Thresholds'),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-              ),
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -704,10 +717,7 @@ class _EmptyStateBadge extends StatelessWidget {
   final IconData icon;
   final String label;
 
-  const _EmptyStateBadge({
-    required this.icon,
-    required this.label,
-  });
+  const _EmptyStateBadge({required this.icon, required this.label});
 
   @override
   Widget build(BuildContext context) {
@@ -718,18 +728,12 @@ class _EmptyStateBadge extends StatelessWidget {
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: theme.dividerColor.withValues(alpha: 0.6),
-        ),
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.6)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            size: 16,
-            color: theme.colorScheme.primary,
-          ),
+          Icon(icon, size: 16, color: theme.colorScheme.primary),
           const SizedBox(width: 8),
           Text(
             label,
