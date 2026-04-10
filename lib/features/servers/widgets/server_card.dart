@@ -139,7 +139,7 @@ class ServerCard extends ConsumerWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color.withOpacity(0.25)),
       ),
-      child: Icon(Icons.dns_rounded, color: color, size: 22),
+      child: Icon(server.displayIcon, color: color, size: 22),
     );
   }
 

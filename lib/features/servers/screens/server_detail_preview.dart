@@ -5,7 +5,6 @@ import '../../../core/theme/app_theme.dart';
 import '../../../data/database/app_database.dart';
 import '../../../data/repositories/server_repository.dart';
 import '../../../ssh/ssh_connection_manager.dart';
-import '../../../ssh/ssh_models.dart';
 import '../mock/mock_metric_generator.dart';
 import 'server_detail_screen.dart';
 
@@ -28,7 +27,8 @@ final _mockServer = Server(
   label: null,
   notes: null,
   tags: null,
-  color: OrbitalColors.accent.value,
+  color: OrbitalColors.accent.toARGB32(),
+  iconKey: 'server',
   createdAt: DateTime(2025, 1, 15),
   lastConnectedAt: null,
   cpuAlertThreshold: null,

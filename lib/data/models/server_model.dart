@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
+import '../../core/models/server_icon_catalog.dart';
 import '../database/app_database.dart';
 import '../database/tables.dart';
 
@@ -16,6 +17,8 @@ extension ServerExtension on Server {
     if (color == null) return null;
     return Color(color!);
   }
+
+  IconData get displayIcon => ServerIconCatalog.resolveIcon(iconKey);
 
   String get displayName => name.isNotEmpty ? name : host;
 
@@ -39,6 +42,7 @@ class ServerFormData {
   final String? notes;
   final List<String> tags;
   final Color? color;
+  final String iconKey;
   final double? cpuAlertThreshold;
   final double? memoryAlertThreshold;
   final double? diskAlertThreshold;
@@ -55,6 +59,7 @@ class ServerFormData {
     this.notes,
     this.tags = const [],
     this.color,
+    this.iconKey = ServerIconCatalog.defaultKey,
     this.cpuAlertThreshold,
     this.memoryAlertThreshold,
     this.diskAlertThreshold,
@@ -71,7 +76,8 @@ class ServerFormData {
     label: Value(label),
     notes: Value(notes),
     tags: Value(tags.isEmpty ? null : tags.join(',')),
-    color: Value(color?.value),
+    color: Value(color?.toARGB32()),
+    iconKey: Value(iconKey),
     cpuAlertThreshold: Value(cpuAlertThreshold),
     memoryAlertThreshold: Value(memoryAlertThreshold),
     diskAlertThreshold: Value(diskAlertThreshold),

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/models/server_icon_catalog.dart';
 import 'tables.dart';
 
 part 'app_database.g.dart';
@@ -33,6 +34,16 @@ class AppDatabase extends _$AppDatabase {
                 hex(randomblob(6))
               )
               WHERE relay_id IS NULL OR relay_id = ''
+              ''',
+            );
+          }
+          if (from < 3) {
+            await m.addColumn(servers, servers.iconKey);
+            await customStatement(
+              '''
+              UPDATE servers
+              SET icon_key = '${ServerIconCatalog.defaultKey}'
+              WHERE icon_key IS NULL OR icon_key = ''
               ''',
             );
           }

@@ -7,7 +7,6 @@ import '../../../data/database/app_database.dart';
 import '../../../ssh/ssh_connection_manager.dart';
 import '../mock/mock_metric_generator.dart';
 import '../widgets/server_card.dart';
-import '../widgets/servers_empty_state.dart';
 
 // ── Mock servers ──────────────────────────────────────────────────────────────
 
@@ -23,7 +22,8 @@ final _mockServers = [
     label: null,
     notes: null,
     tags: null,
-    color: OrbitalColors.accent.value,
+    color: OrbitalColors.accent.toARGB32(),
+    iconKey: 'server',
     createdAt: DateTime(2025, 1, 15),
     lastConnectedAt: null,
     cpuAlertThreshold: null,
@@ -42,7 +42,8 @@ final _mockServers = [
     label: null,
     notes: null,
     tags: null,
-    color: OrbitalColors.memory.value,
+    color: OrbitalColors.memory.toARGB32(),
+    iconKey: 'database',
     createdAt: DateTime(2025, 2, 3),
     lastConnectedAt: null,
     cpuAlertThreshold: null,
@@ -61,7 +62,8 @@ final _mockServers = [
     label: null,
     notes: null,
     tags: null,
-    color: OrbitalColors.network.value,
+    color: OrbitalColors.network.toARGB32(),
+    iconKey: 'terminal',
     createdAt: DateTime(2025, 3, 10),
     lastConnectedAt: null,
     cpuAlertThreshold: null,

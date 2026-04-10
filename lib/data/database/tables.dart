@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart';
+import '../../core/models/server_icon_catalog.dart';
 
 // Enum for auth type stored as int in DB
 enum AuthType { password, privateKey }
@@ -21,6 +22,8 @@ class Servers extends Table {
   TextColumn get notes => text().nullable()();
   TextColumn get tags => text().nullable()(); // comma-separated
   IntColumn get color => integer().nullable()(); // stored as ARGB int
+  TextColumn get iconKey =>
+      text().withDefault(const Constant(ServerIconCatalog.defaultKey))();
 
   // Timestamps
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();

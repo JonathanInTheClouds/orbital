@@ -37,7 +37,7 @@ class AppConstants {
 
   // Database
   static const dbName = 'orbital.db';
-  static const dbVersion = 2;
+  static const dbVersion = 3;
 }
 
 class AppRoutes {

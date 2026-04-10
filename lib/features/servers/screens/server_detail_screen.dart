@@ -249,6 +249,17 @@ class _ServerDetailScreenState extends ConsumerState<ServerDetailScreen>
         titlePadding: const EdgeInsets.fromLTRB(56, 0, 56, 14),
         title: Row(
           children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: serverColor.withOpacity(0.14),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: serverColor.withOpacity(0.25)),
+              ),
+              child: Icon(server.displayIcon, color: serverColor, size: 17),
+            ),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
                 server.displayName,
