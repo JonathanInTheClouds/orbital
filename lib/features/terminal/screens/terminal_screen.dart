@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:dartssh2/dartssh2.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -266,6 +267,10 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
 
   Widget _buildBody() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final enableDeleteDetection = switch (defaultTargetPlatform) {
+      TargetPlatform.iOS || TargetPlatform.android => true,
+      _ => false,
+    };
     return switch (_state) {
       _TerminalState.connecting => Center(
         child: Column(
@@ -386,9 +391,12 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
           return TerminalView(
             _terminal,
             controller: _terminalController,
-            theme: isDark ? _orbitalTerminalThemeDark : _orbitalTerminalThemeLight,
+            theme: isDark
+                ? _orbitalTerminalThemeDark
+                : _orbitalTerminalThemeLight,
             textStyle: const TerminalStyle(fontSize: 13, fontFamily: 'Menlo'),
             autofocus: true,
+            deleteDetection: enableDeleteDetection,
             backgroundOpacity: 1,
             padding: const EdgeInsets.all(4),
           );
