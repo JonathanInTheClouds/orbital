@@ -12,6 +12,7 @@ import '../../../data/database/tables.dart';
 import '../../../data/models/server_model.dart';
 import '../../../data/repositories/server_repository.dart';
 import '../../../ssh/ssh_credential.dart';
+import '../../../ssh/ssh_key_installer_service.dart';
 import '../../../ssh/ssh_key_service.dart';
 
 // ── Test result state ─────────────────────────────────────────────────────────
@@ -50,9 +51,12 @@ class _AddServerScreenState extends ConsumerState<AddServerScreen> {
   bool _obscurePassword = true;
   bool _isSaving = false;
   bool _isGeneratingKey = false;
+  bool _isInstallingKey = false;
   bool _isIconPickerExpanded = false;
   Color _selectedColor = OrbitalColors.accent;
   String _selectedIconKey = ServerIconCatalog.defaultKey;
+  bool _keyInstallStatusIsSuccess = false;
+  String? _keyInstallStatusMessage;
   String? _privateKeyValidationError;
   PrivateKeyCredential? _privateKeyCredential;
   PrivateKeySource _privateKeySource = PrivateKeySource.manual;
@@ -270,6 +274,8 @@ class _AddServerScreenState extends ConsumerState<AddServerScreen> {
         _privateKeyController.text = credential.pem;
         _privateKeyPassphraseController.clear();
         _privateKeyCredential = credential;
+        _keyInstallStatusMessage = null;
+        _keyInstallStatusIsSuccess = false;
         _privateKeyValidationError = null;
         _privateKeySource = PrivateKeySource.generated;
         _privateKeyAlgorithm = algorithm;
@@ -318,6 +324,8 @@ class _AddServerScreenState extends ConsumerState<AddServerScreen> {
       if (!mounted) return;
       setState(() {
         _privateKeyCredential = credential;
+        _keyInstallStatusMessage = null;
+        _keyInstallStatusIsSuccess = false;
         _privateKeyValidationError = null;
         _testResult = _TestResult.idle;
       });
@@ -327,6 +335,8 @@ class _AddServerScreenState extends ConsumerState<AddServerScreen> {
       if (!mounted) return;
       setState(() {
         _privateKeyCredential = null;
+        _keyInstallStatusMessage = null;
+        _keyInstallStatusIsSuccess = false;
         _privateKeyValidationError = e.message;
         _testResult = _TestResult.idle;
       });
@@ -337,16 +347,16 @@ class _AddServerScreenState extends ConsumerState<AddServerScreen> {
   }
 
   Future<String?> _promptForPassphrase() async {
-    final controller = TextEditingController();
+    var passphrase = '';
     final result = await showDialog<String>(
       context: context,
       builder: (context) {
         return AlertDialog(
           title: const Text('Private Key Passphrase'),
-          content: TextField(
-            controller: controller,
+          content: TextFormField(
             autofocus: true,
             obscureText: true,
+            onChanged: (value) => passphrase = value,
             decoration: const InputDecoration(
               labelText: 'Passphrase',
               hintText: 'Enter the key passphrase',
@@ -358,14 +368,13 @@ class _AddServerScreenState extends ConsumerState<AddServerScreen> {
               child: const Text('Skip'),
             ),
             FilledButton(
-              onPressed: () => Navigator.of(context).pop(controller.text),
+              onPressed: () => Navigator.of(context).pop(passphrase),
               child: const Text('Use Passphrase'),
             ),
           ],
         );
       },
     );
-    controller.dispose();
     return result;
   }
 
@@ -399,6 +408,125 @@ class _AddServerScreenState extends ConsumerState<AddServerScreen> {
         );
       },
     );
+  }
+
+  bool _validateInstallFields() {
+    if (_hostController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Host is required')));
+      return false;
+    }
+
+    if (_usernameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Username is required')));
+      return false;
+    }
+
+    if (int.tryParse(_portController.text.trim()) == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Valid port is required')));
+      return false;
+    }
+
+    return true;
+  }
+
+  Future<String?> _promptForInstallPassword() async {
+    var password = _passwordController.text;
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Install Key on Server'),
+          content: TextFormField(
+            initialValue: password,
+            autofocus: true,
+            obscureText: true,
+            onChanged: (value) => password = value,
+            decoration: const InputDecoration(
+              labelText: 'Server Password',
+              hintText: 'Used one time to install the public key',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(password),
+              child: const Text('Install Key'),
+            ),
+          ],
+        );
+      },
+    );
+    return result?.trim();
+  }
+
+  Future<void> _installKeyOnServer(PrivateKeyCredential credential) async {
+    if (!_validateInstallFields()) return;
+
+    final password = await _promptForInstallPassword();
+    if (password == null) return;
+    if (password.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Password is required to install the key'),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isInstallingKey = true;
+      _keyInstallStatusMessage = null;
+      _keyInstallStatusIsSuccess = false;
+    });
+
+    try {
+      final result = await ref
+          .read(sshKeyInstallerServiceProvider)
+          .installPublicKey(
+            host: _hostController.text.trim(),
+            port: int.parse(_portController.text.trim()),
+            username: _usernameController.text.trim(),
+            passwordCredential: PasswordCredential(password: password),
+            privateKeyCredential: credential,
+          );
+
+      if (!mounted) return;
+      final message = result.alreadyPresent
+          ? 'Key already present on the server. Save to keep using SSH key auth.'
+          : 'Key installed on the server. Save to keep using SSH key auth.';
+      setState(() {
+        _authType = AuthType.privateKey;
+        _passwordController.clear();
+        _keyInstallStatusMessage = message;
+        _keyInstallStatusIsSuccess = true;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } on SshKeyInstallException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _keyInstallStatusMessage = e.message;
+        _keyInstallStatusIsSuccess = false;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) {
+        setState(() => _isInstallingKey = false);
+      }
+    }
   }
 
   Future<void> _showPublicKeySheet(PrivateKeyCredential credential) async {
@@ -990,6 +1118,8 @@ class _AddServerScreenState extends ConsumerState<AddServerScreen> {
             _privateKeyAlgorithm = null;
             _privateKeyCredential = null;
           }
+          _keyInstallStatusMessage = null;
+          _keyInstallStatusIsSuccess = false;
           _privateKeyValidationError = null;
           _testResult = _TestResult.idle;
         }),
@@ -1220,8 +1350,36 @@ class _AddServerScreenState extends ConsumerState<AddServerScreen> {
                   icon: const Icon(Icons.copy_rounded),
                   label: 'Copy Public Key',
                 ),
+              _buildSshActionButton(
+                onPressed: _isInstallingKey
+                    ? null
+                    : () => _installKeyOnServer(credential),
+                emphasized: true,
+                icon: _isInstallingKey
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.cloud_upload_rounded),
+                label: _isInstallingKey
+                    ? 'Installing…'
+                    : 'Install Key on Server',
+              ),
             ],
           ),
+          if (_keyInstallStatusMessage != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _keyInstallStatusMessage!,
+              style: TextStyle(
+                fontSize: 13,
+                color: _keyInstallStatusIsSuccess
+                    ? OrbitalColors.online
+                    : Theme.of(context).colorScheme.error,
+              ),
+            ),
+          ],
         ],
       ),
     );
