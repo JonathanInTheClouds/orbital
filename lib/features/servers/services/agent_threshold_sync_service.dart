@@ -8,6 +8,7 @@ import '../../../data/database/app_database.dart';
 import '../../../data/models/server_model.dart';
 import '../../../data/repositories/server_repository.dart';
 import '../../../data/settings/settings_repository.dart';
+import '../../../ssh/ssh_key_service.dart';
 
 const _kContainerImage = 'ghcr.io/jonathanintheclouds/orbital-agent:latest';
 const _kContainerName = 'orbital-agent';
@@ -19,12 +20,15 @@ class AgentThresholdSyncService {
 
   final Ref _ref;
 
-  Future<int> syncServersUsingDefaults(AlertThresholdProfile appDefaults) async {
+  Future<int> syncServersUsingDefaults(
+    AlertThresholdProfile appDefaults,
+  ) async {
     final repo = _ref.read(serverRepositoryProvider);
     final servers = await repo.getAllServers();
     var updated = 0;
     for (final server in servers) {
-      final usesDefaults = server.cpuAlertThreshold == null &&
+      final usesDefaults =
+          server.cpuAlertThreshold == null &&
           server.memoryAlertThreshold == null &&
           server.diskAlertThreshold == null;
       if (!usesDefaults) continue;
@@ -34,13 +38,20 @@ class AgentThresholdSyncService {
     return updated;
   }
 
-  Future<bool> syncServer(Server server, AlertThresholdProfile appDefaults) async {
+  Future<bool> syncServer(
+    Server server,
+    AlertThresholdProfile appDefaults,
+  ) async {
     final repo = _ref.read(serverRepositoryProvider);
     final settings = _ref.read(settingsProvider);
-    final credential = await repo.getCredential(server.credentialStorageKey);
-    if (credential == null || credential.isEmpty) return false;
+    final credential = await repo.getCredentialForServer(server);
+    if (credential == null) return false;
+    final keyService = _ref.read(sshKeyServiceProvider);
 
-    final thresholds = AlertThresholdProfile.effectiveForServer(server, appDefaults);
+    final thresholds = AlertThresholdProfile.effectiveForServer(
+      server,
+      appDefaults,
+    );
 
     SSHClient? client;
     try {
@@ -49,14 +60,10 @@ class AgentThresholdSyncService {
         server.port,
         timeout: const Duration(seconds: 10),
       );
-      client = SSHClient(
-        socket,
+      client = keyService.createClient(
+        socket: socket,
         username: server.username,
-        onPasswordRequest:
-            server.authTypeEnum.name == 'password' ? () => credential : null,
-        identities: server.authTypeEnum.name == 'privateKey'
-            ? [...SSHKeyPair.fromPem(credential)]
-            : null,
+        credential: credential,
       );
       await client.authenticated;
 
@@ -70,8 +77,10 @@ class AgentThresholdSyncService {
         final ram = thresholds.memory.toStringAsFixed(0);
         final disk = thresholds.disk.toStringAsFixed(0);
 
-        await _ssh(client,
-            'sudo $runtime rm -f $_kContainerName 2>/dev/null || true');
+        await _ssh(
+          client,
+          'sudo $runtime rm -f $_kContainerName 2>/dev/null || true',
+        );
         await _ssh(
           client,
           'sudo $runtime run -d '
@@ -90,7 +99,8 @@ class AgentThresholdSyncService {
         return true;
       }
 
-      final hasService = await _sshExitCode(
+      final hasService =
+          await _sshExitCode(
             client,
             'sudo systemctl cat orbital-agent > /dev/null 2>&1',
           ) ==
@@ -127,13 +137,11 @@ class AgentThresholdSyncService {
 
   Future<String?> _findContainerRuntime(SSHClient client) async {
     for (final runtime in ['docker', 'podman']) {
-      final hasRuntime = await _sshExitCode(
-            client,
-            '$runtime info > /dev/null 2>&1',
-          ) ==
-          0;
+      final hasRuntime =
+          await _sshExitCode(client, '$runtime info > /dev/null 2>&1') == 0;
       if (!hasRuntime) continue;
-      final hasContainer = await _sshExitCode(
+      final hasContainer =
+          await _sshExitCode(
             client,
             'sudo $runtime inspect $_kContainerName > /dev/null 2>&1',
           ) ==

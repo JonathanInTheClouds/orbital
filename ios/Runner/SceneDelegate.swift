@@ -96,7 +96,9 @@ final class LiveActivityManager {
 
 // ── SceneDelegate ─────────────────────────────────────────────────────────────
 
-class SceneDelegate: FlutterSceneDelegate {
+class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
+    private var documentPickerResult: FlutterResult?
+
     override func scene(
         _ scene: UIScene,
         willConnectTo session: UISceneSession,
@@ -112,6 +114,12 @@ class SceneDelegate: FlutterSceneDelegate {
             name: "com.orbital/dynamic_island",
             binaryMessenger: flutterViewController.binaryMessenger
         )
+        let documentPickerChannel = FlutterMethodChannel(
+            name: "orbital/document_picker",
+            binaryMessenger: flutterViewController.binaryMessenger
+        )
+
+        setupDocumentPickerChannel(documentPickerChannel, presenter: flutterViewController)
 
         if #available(iOS 16.2, *) {
             setupDynamicIslandChannel(channel)
@@ -124,6 +132,101 @@ class SceneDelegate: FlutterSceneDelegate {
                 ))
             }
         }
+    }
+
+    private func setupDocumentPickerChannel(
+        _ channel: FlutterMethodChannel,
+        presenter: FlutterViewController
+    ) {
+        channel.setMethodCallHandler { [weak self, weak presenter] call, result in
+            guard let self else { return }
+
+            switch call.method {
+            case "pickTextFile":
+                guard let presenter else {
+                    result(
+                        FlutterError(
+                            code: "unavailable",
+                            message: "No active Flutter view controller is available.",
+                            details: nil
+                        )
+                    )
+                    return
+                }
+
+                if self.documentPickerResult != nil {
+                    result(
+                        FlutterError(
+                            code: "busy",
+                            message: "A document picker request is already active.",
+                            details: nil
+                        )
+                    )
+                    return
+                }
+
+                self.documentPickerResult = result
+                let picker = UIDocumentPickerViewController(
+                    documentTypes: ["public.text", "public.data"],
+                    in: .import
+                )
+                picker.delegate = self
+                picker.allowsMultipleSelection = false
+                presenter.present(picker, animated: true)
+
+            default:
+                result(FlutterMethodNotImplemented)
+            }
+        }
+    }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        documentPickerResult?(nil)
+        documentPickerResult = nil
+    }
+
+    func documentPicker(
+        _ controller: UIDocumentPickerViewController,
+        didPickDocumentsAt urls: [URL]
+    ) {
+        guard let url = urls.first else {
+            documentPickerResult?(nil)
+            documentPickerResult = nil
+            return
+        }
+
+        let secured = url.startAccessingSecurityScopedResource()
+        defer {
+            if secured {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        do {
+            let data = try Data(contentsOf: url)
+            guard let content = String(data: data, encoding: .utf8) else {
+                throw NSError(
+                    domain: "orbital.documentPicker",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "The selected file is not valid UTF-8 text."]
+                )
+            }
+
+            documentPickerResult?([
+                "name": url.lastPathComponent,
+                "content": content
+            ])
+        } catch {
+            documentPickerResult?(
+                FlutterError(
+                    code: "read_failed",
+                    message: error.localizedDescription,
+                    details: nil
+                )
+            )
+        }
+
+        documentPickerResult = nil
     }
 
     @available(iOS 16.2, *)

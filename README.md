@@ -4,7 +4,7 @@ Orbital is a Flutter mobile app for monitoring Linux servers over SSH. It gives 
 
 ## Current Feature Set
 
-- Add and manage servers with password or private-key SSH authentication
+- Add and manage servers with password auth or private keys imported from Files/iCloud Drive, clipboard, or on-device generation
 - Store server credentials securely with `flutter_secure_storage`
 - View live CPU, RAM, disk, and network metrics from each server
 - Track short-term metric history with charts on the server detail screen

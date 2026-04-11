@@ -4,11 +4,12 @@ import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/logging/orbital_logger.dart';
 import '../data/database/app_database.dart';
-import '../data/database/tables.dart';
 import '../data/models/server_model.dart';
 import '../data/repositories/server_repository.dart';
 import '../data/settings/settings_repository.dart';
 import 'metrics_parser.dart';
+import 'ssh_credential.dart';
+import 'ssh_key_service.dart';
 import 'ssh_models.dart';
 
 // ── SshConnection ─────────────────────────────────────────────────────────────
@@ -16,8 +17,9 @@ import 'ssh_models.dart';
 /// Manages a single SSH connection to one server.
 class SshConnection {
   final Server server;
-  final String credential;
+  final SshCredential credential;
   final SettingsRepository _settings;
+  final SshKeyService _keyService;
 
   SSHClient? _client;
   Timer? _pollTimer;
@@ -37,7 +39,9 @@ class SshConnection {
     required this.server,
     required this.credential,
     required SettingsRepository settings,
-  }) : _settings = settings;
+    required SshKeyService keyService,
+  }) : _settings = settings,
+       _keyService = keyService;
 
   void _emit(ServerConnectionState state) {
     _state = state;
@@ -49,7 +53,9 @@ class SshConnection {
   bool _isRecoverableConnectionError(Object error) {
     if (error is SSHStateError) return true;
     final message = error.toString();
-    return message.contains('Connection closed while waiting for channel open') ||
+    return message.contains(
+          'Connection closed while waiting for channel open',
+        ) ||
         message.contains('Transport is closed');
   }
 
@@ -113,15 +119,10 @@ class SshConnection {
 
       log.debug('SSH', 'Socket established to $_tag — authenticating');
 
-      _client = SSHClient(
-        socket,
+      _client = _keyService.createClient(
+        socket: socket,
         username: server.username,
-        onPasswordRequest: server.authTypeEnum == AuthType.password
-            ? () => credential
-            : null,
-        identities: server.authTypeEnum == AuthType.privateKey
-            ? [...SSHKeyPair.fromPem(credential)]
-            : null,
+        credential: credential,
       );
 
       await _client!.authenticated;
@@ -135,8 +136,10 @@ class SshConnection {
 
       // Detect OS — run uname before emitting connected so the detail
       // screen knows immediately whether metrics are supported.
-      final osName = (await _runCommand('uname -s', allowReconnect: false))
-          .trim();
+      final osName = (await _runCommand(
+        'uname -s',
+        allowReconnect: false,
+      )).trim();
       log.info('SSH', 'Remote OS for $_tag: $osName');
 
       if (osName != 'Linux') {
@@ -349,8 +352,9 @@ class SshConnectionManager {
   final Map<int, SshConnection> _connections = {};
   final ServerRepository _repo;
   final SettingsRepository _settings;
+  final SshKeyService _keyService;
 
-  SshConnectionManager(this._repo, this._settings);
+  SshConnectionManager(this._repo, this._settings, this._keyService);
 
   Future<SshConnection> getOrConnect(Server server) async {
     if (_connections.containsKey(server.id)) {
@@ -363,7 +367,7 @@ class SshConnectionManager {
       return conn;
     }
 
-    final credential = await _repo.getCredential(server.credentialStorageKey);
+    final credential = await _repo.getCredentialForServer(server);
     if (credential == null) {
       OrbitalLogger.instance.error(
         'SSH',
@@ -381,6 +385,7 @@ class SshConnectionManager {
       server: server,
       credential: credential,
       settings: _settings,
+      keyService: _keyService,
     );
     _connections[server.id] = conn;
     await conn.connect();
@@ -409,6 +414,7 @@ final sshManagerProvider = Provider<SshConnectionManager>((ref) {
   final manager = SshConnectionManager(
     ref.watch(serverRepositoryProvider),
     ref.watch(settingsRepositoryProvider),
+    ref.watch(sshKeyServiceProvider),
   );
   ref.onDispose(manager.dispose);
   return manager;

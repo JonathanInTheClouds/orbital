@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
@@ -9,9 +8,9 @@ import 'package:http/http.dart' as http;
 import '../../../core/models/alert_thresholds.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/database/app_database.dart';
-import '../../../data/database/tables.dart';
 import '../../../data/models/server_model.dart';
 import '../../../data/repositories/server_repository.dart';
+import '../../../ssh/ssh_key_service.dart';
 import '../../../data/settings/settings_repository.dart';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -317,7 +316,10 @@ class _AgentInstallerSheetState extends ConsumerState<AgentInstallerSheet> {
               client!,
               'cd /tmp/orbital-src/agent && CGO_ENABLED=0 go build -o /tmp/orbital-agent',
             );
-            await _ssh(client!, 'sudo mv /tmp/orbital-agent $_kAgentInstallPath');
+            await _ssh(
+              client!,
+              'sudo mv /tmp/orbital-agent $_kAgentInstallPath',
+            );
             await _ssh(client!, 'sudo chmod +x $_kAgentInstallPath');
             setState(() => _steps[3].detail = 'Built from source');
           } catch (_) {
@@ -466,22 +468,20 @@ class _AgentInstallerSheetState extends ConsumerState<AgentInstallerSheet> {
 
   Future<SSHClient> _connect() async {
     final repo = ref.read(serverRepositoryProvider);
-    final credential =
-        await repo.getCredential(widget.server.credentialStorageKey) ?? '';
+    final credential = await repo.getCredentialForServer(widget.server);
+    if (credential == null) {
+      throw StateError('No credential found for server');
+    }
+    final keyService = ref.read(sshKeyServiceProvider);
     final socket = await SSHSocket.connect(
       widget.server.host,
       widget.server.port,
       timeout: const Duration(seconds: 15),
     );
-    final client = SSHClient(
-      socket,
+    final client = keyService.createClient(
+      socket: socket,
       username: widget.server.username,
-      onPasswordRequest: widget.server.authTypeEnum == AuthType.password
-          ? () => credential
-          : null,
-      identities: widget.server.authTypeEnum == AuthType.privateKey
-          ? [...SSHKeyPair.fromPem(credential)]
-          : null,
+      credential: credential,
     );
     await client.authenticated;
     return client;
@@ -550,7 +550,9 @@ class _AgentInstallerSheetState extends ConsumerState<AgentInstallerSheet> {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(

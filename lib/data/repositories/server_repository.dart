@@ -5,8 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../core/constants/app_constants.dart';
 import '../database/app_database.dart';
-import '../database/tables.dart';
 import '../models/server_model.dart';
+import '../../ssh/ssh_credential.dart';
 
 class ServerRepository {
   final AppDatabase _db;
@@ -25,12 +25,8 @@ class ServerRepository {
     _db.servers,
   )..where((s) => s.id.equals(id))).getSingleOrNull();
 
-  Future<int> addServer(ServerFormData data, String credential) async {
-    // Store credential securely first
-    await _secureStorage.write(
-      key: data.credentialStorageKey,
-      value: credential,
-    );
+  Future<int> addServer(ServerFormData data, SshCredential credential) async {
+    await _writeCredential(data.credentialStorageKey, credential);
     return _db
         .into(_db.servers)
         .insert(data.toCompanion().copyWith(relayId: Value(_newUuidV4())));
@@ -39,13 +35,10 @@ class ServerRepository {
   Future<bool> updateServer(
     int id,
     ServerFormData data, {
-    String? credential,
+    SshCredential? credential,
   }) async {
     if (credential != null) {
-      await _secureStorage.write(
-        key: data.credentialStorageKey,
-        value: credential,
-      );
+      await _writeCredential(data.credentialStorageKey, credential);
     }
     return _db
         .update(_db.servers)
@@ -69,8 +62,21 @@ class ServerRepository {
 
   // ── Credentials ──────────────────────────────────────────────────────────
 
-  Future<String?> getCredential(String storageKey) =>
-      _secureStorage.read(key: storageKey);
+  Future<SshCredential?> getCredentialForServer(Server server) async {
+    final raw = await _secureStorage.read(key: server.credentialStorageKey);
+    if (raw == null) return null;
+    return SshCredential.decodeForStorage(raw, server.authTypeEnum);
+  }
+
+  Future<void> _writeCredential(
+    String storageKey,
+    SshCredential credential,
+  ) async {
+    await _secureStorage.write(
+      key: storageKey,
+      value: credential.encodeForStorage(),
+    );
+  }
 
   String generateCredentialKey(String host, String username) =>
       '${AppConstants.credentialPrefix}${username}_$host';

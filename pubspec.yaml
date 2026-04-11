@@ -30,6 +30,9 @@ dependencies:
   intl: ^0.20.2
   http: ^1.6.0
   local_auth: ^2.3.0
+  crypto: ^3.0.7
+  pinenacl: ^0.6.0
+  pointycastle: ^4.0.0
 
 dev_dependencies:
   flutter_test:
