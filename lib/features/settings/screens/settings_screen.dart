@@ -1581,6 +1581,7 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
   }
 
   Widget _buildLevelFilter() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       color: Theme.of(context).colorScheme.surface,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
@@ -1601,22 +1602,32 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
               decoration: BoxDecoration(
                 color: selected
-                    ? color.withOpacity(0.15)
+                    ? color.withValues(alpha: isDark ? 0.22 : 0.14)
                     : Theme.of(context).inputDecorationTheme.fillColor,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
                   color: selected
-                      ? color.withOpacity(0.4)
-                      : Theme.of(context).brightness == Brightness.dark
-                          ? Colors.white.withOpacity(0.12)
-                          : Colors.black.withOpacity(0.12),
+                      ? color.withValues(alpha: isDark ? 0.7 : 0.5)
+                      : isDark
+                          ? Colors.white.withValues(alpha: 0.12)
+                          : Colors.black.withValues(alpha: 0.12),
+                  width: selected ? 1.4 : 1,
                 ),
+                boxShadow: selected
+                    ? [
+                        BoxShadow(
+                          color: color.withValues(alpha: isDark ? 0.18 : 0.1),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ]
+                    : null,
               ),
               child: Text(
                 level.label,
                 style: TextStyle(
                   fontSize: 11,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
                   color: selected ? color : OrbitalColors.textMuted,
                   fontFamily: 'Menlo',
                 ),
